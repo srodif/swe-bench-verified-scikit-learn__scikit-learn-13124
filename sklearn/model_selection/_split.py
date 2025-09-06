@@ -620,7 +620,7 @@ class StratifiedKFold(_BaseKFold):
         super().__init__(n_splits, shuffle, random_state)
 
     def _make_test_folds(self, X, y=None):
-        rng = self.random_state
+        rng = check_random_state(self.random_state)
         y = np.asarray(y)
         type_of_target_y = type_of_target(y)
         allowed_target_types = ('binary', 'multiclass')
@@ -651,10 +651,22 @@ class StratifiedKFold(_BaseKFold):
         # NOTE: Passing the data corresponding to ith class say X[y==class_i]
         # will break when the data is not 100% stratifiable for all classes.
         # So we pass np.zeroes(max(c, n_splits)) as data to the KFold
-        per_cls_cvs = [
-            KFold(self.n_splits, shuffle=self.shuffle,
-                  random_state=rng).split(np.zeros(max(count, self.n_splits)))
-            for count in y_counts]
+        
+        # When shuffle=True, we need to generate different random states for each
+        # class to ensure that each stratification is shuffled independently
+        if self.shuffle:
+            # Generate unique random seeds for each class
+            random_seeds = rng.randint(0, 2**31, size=len(y_counts))
+            per_cls_cvs = [
+                KFold(self.n_splits, shuffle=self.shuffle,
+                      random_state=random_seeds[i]).split(np.zeros(max(count, self.n_splits)))
+                for i, count in enumerate(y_counts)]
+        else:
+            # When not shuffling, we can use None for random_state
+            per_cls_cvs = [
+                KFold(self.n_splits, shuffle=self.shuffle,
+                      random_state=None).split(np.zeros(max(count, self.n_splits)))
+                for count in y_counts]
 
         test_folds = np.zeros(n_samples, dtype=np.int)
         for test_fold_indices, per_cls_splits in enumerate(zip(*per_cls_cvs)):
